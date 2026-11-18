@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Монтаж рилса из ваших видео</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1d1b18;--mute:#6b665d;--acc:#d9481c;--line:#e3ded3;--ok:#2f7d4f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+main{max-width:560px;margin:0 auto;padding:28px 16px 48px}
+h1{font-size:28px;line-height:1.15;margin:0 0 10px;letter-spacing:-.01em}
+.lead{color:var(--mute);margin:0 0 22px}
+ol.shagi{margin:0 0 24px;padding-left:22px;color:var(--mute)}
+ol.shagi li{margin:4px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px}
+label{display:block;font-weight:600;margin:16px 0 6px}
+label:first-child{margin-top:0}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;border:2px dashed var(--line);
+  border-radius:12px;padding:22px 12px;text-align:center;cursor:pointer;color:var(--mute)}
+.drop b{color:var(--ink);font-size:18px}
+.drop.est{border-color:var(--ok)}
+input[type=file]{display:none}
+textarea,input[type=text]{width:100%;font:inherit;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+textarea{min-height:110px;resize:vertical}
+.spisok{margin:10px 0 0;padding:0;list-style:none;font-size:15px}
+.spisok li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.spisok li span:last-child{color:var(--mute);white-space:nowrap}
+.spisok li.ok span:last-child{color:var(--ok)}
+.spisok li.err span:last-child{color:var(--acc)}
+button{width:100%;margin-top:18px;padding:15px;border:0;border-radius:12px;background:var(--acc);color:#fff;font-family:inherit;font-weight:600;font-size:18px;line-height:1.2;cursor:pointer}
+button:disabled{opacity:.55;cursor:default}
+.oshibka{color:var(--acc);margin-top:12px;min-height:1em}
+.soglasie{display:flex;gap:10px;align-items:flex-start;font-weight:400;margin:16px 0 0;cursor:pointer}
+.soglasie input{width:22px;height:22px;margin:1px 0 0;flex:none;accent-color:var(--acc)}
+.mel{font-size:14px;color:var(--mute);margin-top:12px}
+.polosa{height:8px;background:var(--line);border-radius:4px;overflow:hidden;margin-top:14px;display:none}
+.polosa i{display:block;height:100%;width:0;background:var(--ok);transition:width .3s}
+@media (prefers-color-scheme:dark){:root{--bg:#161513;--card:#201f1c;--ink:#f1eee8;--mute:#a39d92;--line:#36332e}
+  textarea,input[type=text]{background:#1a1917}}
+</style>
+</head>
+<body>
+<main>
+<h1>Монтаж рилса из ваших видео</h1>
+<p class="lead">Наснимали вертикальные видео на телефон, а монтировать некогда? Залейте их сюда и напишите, какой ролик нужен.</p>
+<ol class="shagi">
+  <li>Загружаете видео и пишете задачу.</li>
+  <li>Через 1-2 часа присылаем превью ролика в Telegram или на телефон.</li>
+  <li>Нравится - получаете ролик в полном качестве. Нет - пишете, что поменять.</li>
+</ol>
+<form class="card" id="forma" autocomplete="on">
+  <label for="faily">Видео</label>
+  <div class="drop" id="drop" onclick="document.getElementById('faily').click()">
+    <b>Выбрать видео</b><span id="dropTekst">вертикальные, с телефона, до 20 файлов</span>
+  </div>
+  <input type="file" id="faily" accept="video/*" multiple>
+  <ul class="spisok" id="spisok"></ul>
+
+  <label for="prompt">Какой ролик нужен</label>
+  <textarea id="prompt" placeholder="Например: рилс на 30 секунд про открытие нашей пекарни, бодро, в конце адрес. Начать с кадра, где достаём хлеб из печи."></textarea>
+
+  <label for="kontakt">Телефон или Telegram</label>
+  <input type="text" id="kontakt" placeholder="+7... или @ник" autocomplete="tel">
+
+  <label class="soglasie"><input type="checkbox" id="soglasie"> <span>Согласен, чтобы со мной связались по этому заказу</span></label>
+
+  <button type="submit" id="knopka" disabled>Отправить</button>
+  <div class="polosa" id="polosa"><i id="polosaI"></i></div>
+  <div class="oshibka" id="oshibka"></div>
+  <p class="mel">Видео не уйдут дальше нашего монтажа. Превью пришлём на указанный контакт.</p>
+</form>
+</main>
+<script>
+// Приём на Яндекс.Диск: ключ с доступом только к папке приложения (Приложения/Монтаж).
+const KLYUCH = '';
+const API = 'https://cloud-api.yandex.net/v1/disk/resources';
+const $ = id => document.getElementById(id);
+let vybrano = [];
+$('soglasie').addEventListener('change', () => { $('knopka').disabled = !$('soglasie').checked; });
+$('faily').addEventListener('change', e => {
+  vybrano = Array.from(e.target.files).slice(0, 20);
+  const s = $('spisok'); s.innerHTML = '';
+  vybrano.forEach((f, i) => {
+    const li = document.createElement('li'); li.id = 'f' + i;
+    li.innerHTML = '<span></span><span></span>';
+    li.children[0].textContent = f.name;
+    li.children[1].textContent = (f.size / 1048576).toFixed(0) + ' МБ';
+    s.appendChild(li);
+  });
+  $('drop').classList.toggle('est', vybrano.length > 0);
+  $('dropTekst').textContent = vybrano.length ? 'выбрано: ' + vybrano.length + ' (нажмите, чтобы выбрать заново)' : 'вертикальные, с телефона, до 20 файлов';
+});
+const zag = () => ({Authorization: 'OAuth ' + KLYUCH});
+async function papka(put) {
+  const r = await fetch(API + '?path=' + encodeURIComponent(put), {method: 'PUT', headers: zag()});
+  if (!r.ok && r.status !== 409) throw new Error('папка ' + r.status);
+}
+async function kuda(put) {
+  const r = await fetch(API + '/upload?overwrite=true&path=' + encodeURIComponent(put), {headers: zag()});
+  const d = await r.json(); if (!r.ok) throw new Error(d.message || ('ошибка ' + r.status)); return d.href;
+}
+function zalit(href, telo, i, gotovo, obshchiy) {
+  return new Promise((ok, ne) => {
+    const x = new XMLHttpRequest(); x.open('PUT', href);
+    x.upload.onprogress = e => {
+      if (i >= 0) $('f' + i).children[1].textContent = Math.round(e.loaded / (e.total || 1) * 100) + '%';
+      if (obshchiy) $('polosaI').style.width = ((gotovo + e.loaded) / obshchiy * 100).toFixed(1) + '%';
+    };
+    x.onload = () => (x.status >= 200 && x.status < 300) ? ok() : ne(new Error('ошибка ' + x.status));
+    x.onerror = () => ne(new Error('связь прервалась'));
+    x.send(telo);
+  });
+}
+$('forma').addEventListener('submit', async e => {
+  e.preventDefault(); $('oshibka').textContent = '';
+  const prompt = $('prompt').value.trim(), kontakt = $('kontakt').value.trim();
+  if (!vybrano.length) return $('oshibka').textContent = 'Выберите хотя бы одно видео.';
+  if (prompt.length < 3) return $('oshibka').textContent = 'Напишите, какой ролик нужен.';
+  if (!kontakt) return $('oshibka').textContent = 'Оставьте телефон или Telegram, чтобы мы могли связаться.';
+  if (!KLYUCH) return $('oshibka').textContent = 'Приём видео включается, попробуйте чуть позже.';
+  $('knopka').disabled = true; $('knopka').textContent = 'Загружаем...'; $('polosa').style.display = 'block';
+  try {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const imya = d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + '-' + p(d.getMinutes()) + ' ' + kontakt.replace(/[^\wа-яё@+]/gi, '').slice(0, 30);
+    const koren = 'app:/Заказы/' + imya;
+    await papka('app:/Заказы'); await papka(koren);
+    const obshchiy = vybrano.reduce((a, f) => a + f.size, 0); let gotovo = 0;
+    for (let i = 0; i < vybrano.length; i++) {
+      const f = vybrano[i]; let popytka = 0;
+      for (;;) {
+        try { await zalit(await kuda(koren + '/' + f.name), f, i, gotovo, obshchiy); break; }
+        catch (err) {
+          if (++popytka >= 3) { $('f' + i).className = 'err'; $('f' + i).children[1].textContent = err.message; throw err; }
+          $('f' + i).children[1].textContent = 'повтор...'; await new Promise(z => setTimeout(z, 2000 * popytka));
+        }
+      }
+      gotovo += f.size; $('f' + i).className = 'ok'; $('f' + i).children[1].textContent = 'загружено';
+    }
+    const zakaz = 'Контакт: ' + kontakt + '\nСогласие на связь: да\nВремя: ' + d.toLocaleString('ru-RU') + '\nФайлов: ' + vybrano.length + '\n\nЗадача:\n' + prompt + '\n';
+    await zalit(await kuda(koren + '/zakaz.txt'), new Blob([zakaz], {type: 'text/plain'}), -1, 0, 0);
+    $('forma').innerHTML = '<h2 style="margin:0 0 8px">Заказ принят</h2><p style="margin:0">Видео у нас. Превью пришлём на ' + kontakt.replace(/</g, '&lt;') + ' через 1-2 часа.</p>';
+  } catch (err) {
+    $('oshibka').textContent = 'Не получилось: ' + err.message + '. Попробуйте ещё раз.';
+    $('knopka').disabled = !$('soglasie').checked; $('knopka').textContent = 'Отправить';
+  }
+});
+</script>
+</body>
+</html>
