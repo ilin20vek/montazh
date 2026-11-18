@@ -91,24 +91,38 @@ $('faily').addEventListener('change', e => {
   $('drop').classList.toggle('est', vybrano.length > 0);
   $('dropTekst').textContent = vybrano.length ? 'выбрано: ' + vybrano.length + ' (нажмите, чтобы выбрать заново)' : 'вертикальные, с телефона, до 20 файлов';
 });
+async function otchet(err) {  // отказ - строкой на Диск, чтобы мы увидели шаг без пересказа
+  const t = 'Время: ' + new Date().toISOString() + '\nШаг: ' + shag + '\nОшибка: ' + err.message +
+    '\nБраузер: ' + navigator.userAgent + '\nСеть: ' + ((navigator.connection || {}).effectiveType || '?') +
+    '\nФайлы: ' + vybrano.map(f => f.name + ' ' + f.size + ' ' + f.type).join('; ') + '\n';
+  await fetch(API + '?path=' + encodeURIComponent('app:/Отказы'), {method: 'PUT', headers: zag()}).catch(() => {});
+  const r = await fetch(API + '/upload?path=' + encodeURIComponent('app:/Отказы/' + Date.now() + '.txt'), {headers: zag()});
+  const d = await r.json(); await fetch(d.href, {method: 'PUT', body: t});
+}
 const zag = () => ({Authorization: 'OAuth ' + KLYUCH});
+let shag = '';
+async function zapros(nazvanie, url, opts) {
+  shag = nazvanie;
+  try { return await fetch(url, opts); }
+  catch (e) { throw new Error('нет ответа Яндекса на шаге «' + nazvanie + '» (' + e.message + ')'); }
+}
 async function papka(put) {
-  const r = await fetch(API + '?path=' + encodeURIComponent(put), {method: 'PUT', headers: zag()});
+  const r = await zapros('папка', API + '?path=' + encodeURIComponent(put), {method: 'PUT', headers: zag()});
   if (!r.ok && r.status !== 409) throw new Error('папка ' + r.status);
 }
 async function kuda(put) {
-  const r = await fetch(API + '/upload?overwrite=true&path=' + encodeURIComponent(put), {headers: zag()});
+  const r = await zapros('адрес загрузки', API + '/upload?overwrite=true&path=' + encodeURIComponent(put), {headers: zag()});
   const d = await r.json(); if (!r.ok) throw new Error(d.message || ('ошибка ' + r.status)); return d.href;
 }
 function zalit(href, telo, i, gotovo, obshchiy) {
   return new Promise((ok, ne) => {
-    const x = new XMLHttpRequest(); x.open('PUT', href);
+    shag = 'загрузка файла'; const x = new XMLHttpRequest(); x.open('PUT', href);
     x.upload.onprogress = e => {
       if (i >= 0) $('f' + i).children[1].textContent = Math.round(e.loaded / (e.total || 1) * 100) + '%';
       if (obshchiy) $('polosaI').style.width = ((gotovo + e.loaded) / obshchiy * 100).toFixed(1) + '%';
     };
     x.onload = () => (x.status >= 200 && x.status < 300) ? ok() : ne(new Error('ошибка ' + x.status));
-    x.onerror = () => ne(new Error('связь прервалась'));
+    x.onerror = () => ne(new Error('связь прервалась на загрузке файла'));
     x.send(telo);
   });
 }
@@ -142,6 +156,7 @@ $('forma').addEventListener('submit', async e => {
     $('forma').innerHTML = '<h2 style="margin:0 0 8px">Заказ принят</h2><p style="margin:0">Видео у нас. Превью пришлём на ' + kontakt.replace(/</g, '&lt;') + ' через 1-2 часа.</p>';
   } catch (err) {
     $('oshibka').textContent = 'Не получилось: ' + err.message + '. Попробуйте ещё раз.';
+    otchet(err).catch(() => {});
     $('knopka').disabled = !$('soglasie').checked; $('knopka').textContent = 'Отправить';
   }
 });
