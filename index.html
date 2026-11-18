@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Монтаж рилса из ваших видео</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#d9481c">
+<link rel="apple-touch-icon" href="ikonka-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Монтаж">
 <style>
 :root{--bg:#f6f4ef;--card:#fff;--ink:#1d1b18;--mute:#6b665d;--acc:#d9481c;--line:#e3ded3;--ok:#2f7d4f}
 *{box-sizing:border-box}
@@ -99,6 +104,15 @@ async function otchet(err) {  // отказ - строкой на Диск, чт
   const r = await fetch(API + '/upload?path=' + encodeURIComponent('app:/Отказы/' + Date.now() + '.txt'), {headers: zag()});
   const d = await r.json(); await fetch(d.href, {method: 'PUT', body: t});
 }
+async function uporno(fn) {  // шаг без файла: тоже до 6 попыток
+  for (let n = 1; ; n++) { try { return await fn(); } catch (e) { if (n >= 6) throw e; await new Promise(z => setTimeout(z, Math.min(30000, 3000 * n))); } }
+}
+let zamok = null;  // экран не гаснет, пока идёт загрузка: погасший телефон рвёт отправку
+async function budilnik(vkl) {
+  try { if (vkl && navigator.wakeLock) zamok = await navigator.wakeLock.request('screen'); else if (zamok) { await zamok.release(); zamok = null; } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (zamok && document.visibilityState === 'visible') budilnik(true); });
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 const zag = () => ({Authorization: 'OAuth ' + KLYUCH});
 let shag = '';
 async function zapros(nazvanie, url, opts) {
@@ -133,30 +147,32 @@ $('forma').addEventListener('submit', async e => {
   if (prompt.length < 3) return $('oshibka').textContent = 'Напишите, какой ролик нужен.';
   if (!kontakt) return $('oshibka').textContent = 'Оставьте телефон или Telegram, чтобы мы могли связаться.';
   if (!KLYUCH) return $('oshibka').textContent = 'Приём видео включается, попробуйте чуть позже.';
-  $('knopka').disabled = true; $('knopka').textContent = 'Загружаем...'; $('polosa').style.display = 'block';
+  budilnik(true);
+  $('knopka').disabled = true; $('knopka').textContent = 'Загружаем... не закрывайте страницу'; $('polosa').style.display = 'block';
   try {
     const d = new Date(), p = n => String(n).padStart(2, '0');
     const imya = d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + '-' + p(d.getMinutes()) + ' ' + kontakt.replace(/[^\wа-яё@+]/gi, '').slice(0, 30);
     const koren = 'app:/Заказы/' + imya;
-    await papka('app:/Заказы'); await papka(koren);
+    await uporno(() => papka('app:/Заказы')); await uporno(() => papka(koren));
     const obshchiy = vybrano.reduce((a, f) => a + f.size, 0); let gotovo = 0;
     for (let i = 0; i < vybrano.length; i++) {
-      const f = vybrano[i]; let popytka = 0;
+      const f = vybrano[i]; let popytka = 0;  // 6 попыток с паузой до 30 с: телефон успевает сменить сеть
       for (;;) {
         try { await zalit(await kuda(koren + '/' + f.name), f, i, gotovo, obshchiy); break; }
         catch (err) {
-          if (++popytka >= 3) { $('f' + i).className = 'err'; $('f' + i).children[1].textContent = err.message; throw err; }
-          $('f' + i).children[1].textContent = 'повтор...'; await new Promise(z => setTimeout(z, 2000 * popytka));
+          if (++popytka >= 6) { $('f' + i).className = 'err'; $('f' + i).children[1].textContent = err.message; throw err; }
+          $('f' + i).children[1].textContent = 'повтор...'; await new Promise(z => setTimeout(z, Math.min(30000, 3000 * popytka)));
         }
       }
       gotovo += f.size; $('f' + i).className = 'ok'; $('f' + i).children[1].textContent = 'загружено';
     }
     const zakaz = 'Контакт: ' + kontakt + '\nСогласие на связь: да\nВремя: ' + d.toLocaleString('ru-RU') + '\nФайлов: ' + vybrano.length + '\n\nЗадача:\n' + prompt + '\n';
-    await zalit(await kuda(koren + '/zakaz.txt'), new Blob([zakaz], {type: 'text/plain'}), -1, 0, 0);
+    await uporno(async () => zalit(await kuda(koren + '/zakaz.txt'), new Blob([zakaz], {type: 'text/plain'}), -1, 0, 0));
+    budilnik(false);
     $('forma').innerHTML = '<h2 style="margin:0 0 8px">Заказ принят</h2><p style="margin:0">Видео у нас. Превью пришлём на ' + kontakt.replace(/</g, '&lt;') + ' через 1-2 часа.</p>';
   } catch (err) {
     $('oshibka').textContent = 'Не получилось: ' + err.message + '. Попробуйте ещё раз.';
-    otchet(err).catch(() => {});
+    otchet(err).catch(() => {}); budilnik(false);
     $('knopka').disabled = !$('soglasie').checked; $('knopka').textContent = 'Отправить';
   }
 });
